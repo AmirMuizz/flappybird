@@ -44,13 +44,21 @@ let winner = "";
 
 // Senarai Pasukan F1 2026 & Penaja
 const TEAMS = [
-    { name: "Oracle Red Bull", color: "#0600ef", accent: "#fcd116", sponsor: "ORACLE", speedMod: 1.0 },
-    { name: "Scuderia Ferrari", color: "#e8002d", accent: "#ffffff", sponsor: "SHELL", speedMod: 1.0 },
-    { name: "Mercedes-AMG", color: "#00a29c", accent: "#000000", sponsor: "PETRONAS", speedMod: 1.0 },
-    { name: "McLaren F1", color: "#ff8000", accent: "#0090ff", sponsor: "ANDROID", speedMod: 1.0 },
-    { name: "Aston Martin", color: "#229971", accent: "#cedc00", sponsor: "ARAMCO", speedMod: 1.0 },
-    { name: "Alpine F1", color: "#0093cc", accent: "#ff69b4", sponsor: "BWT", speedMod: 1.0 }
+    { name: "Oracle Red Bull", color: "#0600ef", accent: "#fcd116", sponsor: "ORACLE" },
+    { name: "Scuderia Ferrari", color: "#e8002d", accent: "#ffffff", sponsor: "SHELL" },
+    { name: "Mercedes-AMG", color: "#00a29c", accent: "#000000", sponsor: "PETRONAS" },
+    { name: "McLaren F1", color: "#ff8000", accent: "#0090ff", sponsor: "ANDROID" },
+    { name: "Aston Martin", color: "#229971", accent: "#cedc00", sponsor: "ARAMCO" },
+    { name: "Alpine F1", color: "#0093cc", accent: "#ff69b4", sponsor: "BWT" }
 ];
+
+// Tetapan Kelajuan Litar
+const SPEED_MODES = [
+    { label: "NORMAL", topSpeed: 3.5, accel: 0.08, ersSpeed: 5.0 },
+    { label: "FAST ⚡", topSpeed: 4.5, accel: 0.12, ersSpeed: 6.2 },
+    { label: "TURBO 🔥", topSpeed: 5.5, accel: 0.16, ersSpeed: 7.5 }
+];
+let selectedSpeedIdx = 1; // Default Fast
 
 let p1TeamIdx = 0;
 let p2TeamIdx = 1;
@@ -81,12 +89,6 @@ class Car {
         this.angle = angle;
         this.speed = 0;
         
-        // Kelajuan Disesuaikan (Slower & Better Turning)
-        this.maxSpeed = 2.8; 
-        this.accel = 0.06;
-        this.friction = 0.03;
-        this.turnSpeed = 0.048; // Kawalan stereng lebih responsif
-        
         this.controls = controls;
         this.isP1 = isP1;
         this.team = TEAMS[0];
@@ -109,14 +111,13 @@ class Car {
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
 
-        // --- Model Kereta F1 2026 ---
-        // Rear Wing (Black + Accent)
+        // Rear Wing
         ctx.fillStyle = "#111";
         ctx.fillRect(-16, -7, 4, 14);
         ctx.fillStyle = this.team.accent;
         ctx.fillRect(-16, -8, 2, 16);
 
-        // Wheels (Wide 2026 Low Profile Tires)
+        // Wheels
         ctx.fillStyle = "#000";
         ctx.fillRect(-10, -9, 7, 3.5);
         ctx.fillRect(-10, 5.5, 7, 3.5);
@@ -126,29 +127,29 @@ class Car {
         // Body Chassis
         ctx.fillStyle = this.team.color;
         ctx.beginPath();
-        ctx.moveTo(16, 0);       // Nose cone
-        ctx.lineTo(6, -4);       // Front wing mount
-        ctx.lineTo(-6, -6);      // Sidepod left
-        ctx.lineTo(-14, -5);     // Engine cover left
-        ctx.lineTo(-14, 5);      // Engine cover right
-        ctx.lineTo(-6, 6);       // Sidepod right
-        ctx.lineTo(6, 4);        // Front wing mount
+        ctx.moveTo(16, 0);
+        ctx.lineTo(6, -4);
+        ctx.lineTo(-6, -6);
+        ctx.lineTo(-14, -5);
+        ctx.lineTo(-14, 5);
+        ctx.lineTo(-6, 6);
+        ctx.lineTo(6, 4);
         ctx.closePath();
         ctx.fill();
 
-        // Front Wing 2026 Spec
+        // Front Wing
         ctx.fillStyle = this.team.accent;
         ctx.fillRect(12, -8, 4, 16);
 
-        // Cockpit & HALO Safety Ring
+        // Cockpit & Helmet
         ctx.fillStyle = "#111";
         ctx.fillRect(-2, -3, 6, 6);
-        ctx.fillStyle = "#888"; // Driver Helmet
+        ctx.fillStyle = "#888";
         ctx.beginPath();
         ctx.arc(0, 0, 2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Sponsor Text On Engine Cover
+        // Sponsor Text
         ctx.fillStyle = "#ffffff";
         ctx.font = "bold 5px Arial";
         ctx.textAlign = "center";
@@ -158,7 +159,7 @@ class Car {
         if (this.ersBoosting) {
             ctx.fillStyle = "#00f0ff";
             ctx.beginPath();
-            ctx.arc(-18, 0, 3 + Math.random()*3, 0, Math.PI * 2);
+            ctx.arc(-18, 0, 4 + Math.random()*4, 0, Math.PI * 2);
             ctx.fill();
         }
 
@@ -168,7 +169,9 @@ class Car {
     update(keys) {
         if (gameState !== "PLAYING") return;
 
-        // Semak jika kereta terkeluar dari track (Gravel/Grass check)
+        let spdMode = SPEED_MODES[selectedSpeedIdx];
+
+        // Semak lokasi track (Gravel/Grass Check)
         let isOnTrack = false;
         for (let i = 0; i < trackCenter.length - 1; i++) {
             let p1 = trackCenter[i];
@@ -179,38 +182,45 @@ class Car {
             }
         }
 
-        // Pagar / Grass Penalty: Kelajuan terputus jika terkeluar track
-        let effectiveMaxSpeed = isOnTrack ? this.maxSpeed : 0.8;
+        // Penalti Off-Track (Pagar/Rumput)
+        let maxAllowedSpeed = isOnTrack ? spdMode.topSpeed : 1.0;
+        let accelRate = spdMode.accel;
+        let brakeRate = 0.15;
+        let friction = 0.04;
 
-        // Steering
-        if (keys[this.controls.left]) this.angle -= this.turnSpeed * (Math.abs(this.speed) / this.maxSpeed);
-        if (keys[this.controls.right]) this.angle += this.turnSpeed * (Math.abs(this.speed) / this.maxSpeed);
+        // Stereng Adaptif (Responsif bila perlahan, stabil bila laju)
+        let turnRatio = Math.min(1.2, Math.max(0.3, Math.abs(this.speed) / spdMode.topSpeed));
+        let turnSpeed = 0.052 * turnRatio;
 
-        // ERS Boost Button
+        if (keys[this.controls.left]) this.angle -= turnSpeed;
+        if (keys[this.controls.right]) this.angle += turnSpeed;
+
+        // ERS Boost System
         if (keys[this.controls.ers] && this.ersBattery > 0 && keys[this.controls.up] && isOnTrack) {
             this.ersBoosting = true;
-            effectiveMaxSpeed = 4.2; // ERS Boost speed
-            this.ersBattery -= 0.5;
+            maxAllowedSpeed = spdMode.ersSpeed;
+            accelRate = spdMode.accel * 1.5;
+            this.ersBattery -= 0.6;
         } else {
             this.ersBoosting = false;
-            if (this.ersBattery < 100 && this.speed < 1.5) {
-                this.ersBattery += 0.2; // Cas ERS bila brek/slow
+            if (this.ersBattery < 100 && this.speed < 2.0) {
+                this.ersBattery += 0.25; // Cas bateri bila brek/slow
             }
         }
 
-        // Acceleration & Braking
+        // Kawalan Gas & Brek Dinamik
         if (keys[this.controls.up]) {
-            if (this.speed < effectiveMaxSpeed) this.speed += this.accel;
-            else this.speed -= this.friction; // Slow down to limit
+            if (this.speed < maxAllowedSpeed) this.speed += accelRate;
+            else this.speed -= friction;
         } else if (keys[this.controls.down]) {
-            if (this.speed > -1.0) this.speed -= this.accel * 1.5;
+            if (this.speed > -1.2) this.speed -= brakeRate; // Brek tajam
         } else {
-            if (this.speed > 0) this.speed -= this.friction;
-            if (this.speed < 0) this.speed += this.friction;
-            if (Math.abs(this.speed) < 0.04) this.speed = 0;
+            if (this.speed > 0) this.speed -= friction;
+            if (this.speed < 0) this.speed += friction;
+            if (Math.abs(this.speed) < 0.05) this.speed = 0;
         }
 
-        // Movement
+        // Pergerakan Kereta
         this.x += Math.cos(this.angle) * this.speed;
         this.y += Math.sin(this.angle) * this.speed;
 
@@ -240,7 +250,6 @@ class Car {
     }
 }
 
-// Distance Formula for Off-Track Detection
 function distToSegment(p, v, w) {
     let l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
     if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
@@ -249,7 +258,6 @@ function distToSegment(p, v, w) {
     return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
 }
 
-// Setup Cars
 const keys = {};
 const p1 = new Car(100, 430, 0, { up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", ers: "ShiftRight" }, true);
 const p2 = new Car(100, 450, 0, { up: "KeyW", down: "KeyS", left: "KeyA", right: "KeyD", ers: "Space" }, false);
@@ -258,12 +266,14 @@ window.addEventListener("keydown", (e) => {
     keys[e.code] = true;
     if (e.key === "Shift") keys["ShiftRight"] = true;
 
-    // Team Selection Control
     if (gameState === "SELECT") {
         if (e.code === "ArrowUp") p1TeamIdx = (p1TeamIdx + 1) % TEAMS.length;
         if (e.code === "ArrowDown") p1TeamIdx = (p1TeamIdx - 1 + TEAMS.length) % TEAMS.length;
         if (e.code === "KeyW") p2TeamIdx = (p2TeamIdx + 1) % TEAMS.length;
         if (e.code === "KeyS") p2TeamIdx = (p2TeamIdx - 1 + TEAMS.length) % TEAMS.length;
+        
+        // Tukar Mode Kelajuan (Kekunci M)
+        if (e.code === "KeyM") selectedSpeedIdx = (selectedSpeedIdx + 1) % SPEED_MODES.length;
     }
 });
 
@@ -273,7 +283,7 @@ window.addEventListener("keyup", (e) => {
 });
 
 function drawTrack() {
-    // 1. Outer Barrier / Guard Rail (Pagar Luar)
+    // Pagar & Guard Rail
     ctx.strokeStyle = "#888888";
     ctx.lineWidth = 66;
     ctx.lineCap = "round";
@@ -284,24 +294,24 @@ function drawTrack() {
     ctx.closePath();
     ctx.stroke();
 
-    // 2. Red & White Safety Barriers (Pagar Keselamatan)
+    // Red & White Barriers
     ctx.strokeStyle = "#e10600";
     ctx.lineWidth = 62;
     ctx.setLineDash([12, 12]);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // 3. Grass/Gravel Runoff Area
+    // Grass Runoff
     ctx.strokeStyle = "#27ae60";
     ctx.lineWidth = 58;
     ctx.stroke();
 
-    // 4. Asphalt Race Track (Turapan Jalan)
+    // Asphalt Track
     ctx.strokeStyle = "#2c3e50";
     ctx.lineWidth = 48;
     ctx.stroke();
 
-    // 5. Track White Lines (Sempadan Jalan)
+    // White Border Lines
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -314,9 +324,8 @@ function drawTrack() {
     ctx.lineTo(300, 465);
     ctx.stroke();
 
-    // Sepang GP Title
     ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
-    ctx.font = "bold 34px Arial";
+    ctx.font = "bold 32px Arial";
     ctx.textAlign = "center";
     ctx.fillText("SEPANG INTERNATIONAL CIRCUIT", canvas.width / 2, 270);
 }
@@ -327,7 +336,8 @@ function drawHUD() {
     // P1 HUD
     ctx.fillStyle = p1.team.color;
     ctx.textAlign = "left";
-    ctx.fillText(`P1: ${p1.team.name} | Laps: ${Math.min(p1.lap, p1.maxLaps)}/${p1.maxLaps}`, 15, 25);
+    let p1Spd = Math.round(Math.abs(p1.speed) * 60);
+    ctx.fillText(`P1: ${p1.team.name} | ${p1Spd} KM/H | Lap: ${Math.min(p1.lap, p1.maxLaps)}/${p1.maxLaps}`, 15, 25);
     ctx.fillStyle = "#333";
     ctx.fillRect(15, 32, 110, 10);
     ctx.fillStyle = p1.ersBoosting ? "#00f0ff" : p1.team.color;
@@ -336,7 +346,8 @@ function drawHUD() {
     // P2 HUD
     ctx.fillStyle = p2.team.color;
     ctx.textAlign = "right";
-    ctx.fillText(`P2: ${p2.team.name} | Laps: ${Math.min(p2.lap, p2.maxLaps)}/${p2.maxLaps}`, canvas.width - 15, 25);
+    let p2Spd = Math.round(Math.abs(p2.speed) * 60);
+    ctx.fillText(`P2: ${p2.team.name} | ${p2Spd} KM/H | Lap: ${Math.min(p2.lap, p2.maxLaps)}/${p2.maxLaps}`, canvas.width - 15, 25);
     ctx.fillStyle = "#333";
     ctx.fillRect(canvas.width - 125, 32, 110, 10);
     ctx.fillStyle = p2.ersBoosting ? "#00f0ff" : p2.team.color;
@@ -360,37 +371,42 @@ function drawUI() {
 
         ctx.fillStyle = "#e10600";
         ctx.font = "bold 26px Arial";
-        ctx.fillText("🏁 F1 2026 TEAM SELECTION 🏁", canvas.width / 2, 60);
+        ctx.fillText("🏁 F1 2026 TEAM SELECTION 🏁", canvas.width / 2, 50);
+
+        // Speed Mode Indicator
+        ctx.fillStyle = "#fbc531";
+        ctx.font = "bold 15px Arial";
+        ctx.fillText(`⚡ TETAPAN KELAJUAN: ${SPEED_MODES[selectedSpeedIdx].label} (Tekan 'M' Untuk Tukar)`, canvas.width / 2, 85);
 
         // P1 Selection Box
         ctx.fillStyle = TEAMS[p1TeamIdx].color;
-        ctx.fillRect(50, 110, 240, 220);
+        ctx.fillRect(40, 110, 250, 230);
         ctx.strokeStyle = "#fff";
         ctx.lineWidth = 3;
-        ctx.strokeRect(50, 110, 240, 220);
+        ctx.strokeRect(40, 110, 250, 230);
 
         ctx.fillStyle = "#fff";
         ctx.font = "bold 18px Arial";
-        ctx.fillText("PLAYER 1", 170, 140);
+        ctx.fillText("PLAYER 1", 165, 140);
         ctx.font = "14px Arial";
-        ctx.fillText(`Team: ${TEAMS[p1TeamIdx].name}`, 170, 180);
-        ctx.fillText(`Sponsor: ${TEAMS[p1TeamIdx].sponsor}`, 170, 210);
+        ctx.fillText(`Team: ${TEAMS[p1TeamIdx].name}`, 165, 180);
+        ctx.fillText(`Sponsor: ${TEAMS[p1TeamIdx].sponsor}`, 165, 210);
         ctx.font = "12px Arial";
-        ctx.fillText("Guna ↑ / ↓ Untuk Tukar", 170, 290);
+        ctx.fillText("Guna ↑ / ↓ Untuk Tukar", 165, 300);
 
         // P2 Selection Box
         ctx.fillStyle = TEAMS[p2TeamIdx].color;
-        ctx.fillRect(360, 110, 240, 220);
-        ctx.strokeRect(360, 110, 240, 220);
+        ctx.fillRect(360, 110, 250, 230);
+        ctx.strokeRect(360, 110, 250, 230);
 
         ctx.fillStyle = "#fff";
         ctx.font = "bold 18px Arial";
-        ctx.fillText("PLAYER 2", 480, 140);
+        ctx.fillText("PLAYER 2", 485, 140);
         ctx.font = "14px Arial";
-        ctx.fillText(`Team: ${TEAMS[p2TeamIdx].name}`, 480, 180);
-        ctx.fillText(`Sponsor: ${TEAMS[p2TeamIdx].sponsor}`, 480, 210);
+        ctx.fillText(`Team: ${TEAMS[p2TeamIdx].name}`, 485, 180);
+        ctx.fillText(`Sponsor: ${TEAMS[p2TeamIdx].sponsor}`, 485, 210);
         ctx.font = "12px Arial";
-        ctx.fillText("Guna W / S Untuk Tukar", 480, 290);
+        ctx.fillText("Guna W / S Untuk Tukar", 485, 300);
 
         ctx.fillStyle = "#4cd137";
         ctx.font = "bold 18px Arial";
